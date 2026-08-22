@@ -12,34 +12,291 @@ local Window = Library:CreateWindow({
 	ShowCustomCursor = true,
 })
 
-local DraggableLabel = Library:AddDraggableLabel("Obsidian demo")
-DraggableLabel:SetVisible(true)
-
--- Example of dynamically-updating draggable label with common traits (fps and ping)
-local FrameTimer = tick()
-local FrameCounter = 0;
-local FPS = 60;
-
-local WatermarkConnection = game:GetService('RunService').RenderStepped:Connect(function()
-    FrameCounter += 1;
-
-    if (tick() - FrameTimer) >= 1 then
-        FPS = FrameCounter;
-        FrameTimer = tick();
-        FrameCounter = 0;
-    end;
-
-    DraggableLabel:SetText(('Obsidian demo | %s fps | %s ms'):format(
-        math.floor(FPS),
-        math.floor(game:GetService('Stats').Network.ServerStatsItem['Data Ping']:GetValue()) -- Use LocalPlayer:GetNetworkPing() inside Studio
-    ));
-end);
-
--------------------------------- SCRIPTS --------------------------------
+-- Services
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
 local Camera      = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+
+-- Overlays
+--========================================================--
+-- SERVICES
+--========================================================--
+local UserInputService = game:GetService("UserInputService")
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local Camera      = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Stats = game:GetService("Stats")
+
+local Options = Library.Options
+
+
+--========================================================--
+-- OVERLAY STATES
+--========================================================--
+
+local EnabledFPS = false
+local EnabledPlayerTools = false
+
+
+--========================================================--
+-- FPS + PING OVERLAY
+--========================================================--
+
+local OverlayFps = Library:AddDraggableLabel("FPS / Ping")
+
+-- Começa SEMPRE invisível
+OverlayFps:SetVisible(false)
+
+local FrameTimer = tick()
+local FrameCounter = 0
+local FPS = 60
+
+
+local function SetFPSOverlayEnabled(Value)
+    EnabledFPS = Value == true
+
+    if EnabledFPS then
+        OverlayFps:SetVisible(true)
+    else
+        OverlayFps:SetVisible(false)
+    end
+end
+
+
+local WatermarkConnection = RunService.RenderStepped:Connect(function()
+
+    FrameCounter += 1
+
+    if (tick() - FrameTimer) >= 1 then
+        FPS = FrameCounter
+        FrameTimer = tick()
+        FrameCounter = 0
+    end
+
+    if not EnabledFPS then
+        return
+    end
+
+    local Ping = 0
+
+    pcall(function()
+        Ping = math.floor(
+            Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+        )
+    end)
+
+    OverlayFps:SetText(
+        ("FPS / Ping | %s FPS | %s ms"):format(
+            math.floor(FPS),
+            Ping
+        )
+    )
+
+end)
+
+
+--========================================================--
+-- PLAYER TOOLS OVERLAY
+--========================================================--
+
+local OverlayPlayerTools = Library:AddDraggableLabel("Player Tools")
+
+-- Começa SEMPRE invisível
+OverlayPlayerTools:SetVisible(false)
+
+local SelectedPlayer = nil
+
+
+--========================================================--
+-- PLAYER TOOLS VISIBILITY
+--========================================================--
+
+local function UpdatePlayerToolsVisibility()
+
+    if EnabledPlayerTools and SelectedPlayer then
+        OverlayPlayerTools:SetVisible(true)
+    else
+        OverlayPlayerTools:SetVisible(false)
+    end
+
+end
+
+
+local function SetPlayerToolsOverlayEnabled(Value)
+
+    EnabledPlayerTools = Value == true
+
+    if EnabledPlayerTools then
+        OverlayPlayerTools:SetVisible(true)
+    else
+        OverlayPlayerTools:SetVisible(false)
+    end
+end
+
+
+--========================================================--
+-- GET PLAYER TOOLS
+--========================================================--
+
+local function GetPlayerTools(Player)
+
+    local Tools = {}
+
+    -- Backpack
+    local Backpack = Player:FindFirstChildOfClass("Backpack")
+
+    if Backpack then
+
+        for _, Object in ipairs(Backpack:GetChildren()) do
+
+            if Object:IsA("Tool") then
+                table.insert(Tools, Object.Name)
+            end
+
+        end
+
+    end
+
+
+    -- Character
+    local Character = Player.Character
+
+    if Character then
+
+        for _, Object in ipairs(Character:GetChildren()) do
+
+            if Object:IsA("Tool") then
+                table.insert(Tools, Object.Name)
+            end
+
+        end
+
+    end
+
+
+    table.sort(Tools)
+
+    return Tools
+
+end
+
+
+--========================================================--
+-- UPDATE PLAYER INFO
+--========================================================--
+
+local function UpdatePlayerInfo(Player)
+
+    if not Player or Player == LocalPlayer then
+        return
+    end
+
+    SelectedPlayer = Player
+
+    local Tools = GetPlayerTools(Player)
+
+    local Text = ""
+
+    Text = Text .. Player.DisplayName
+    Text = Text .. "  @" .. Player.Name
+    Text = Text .. "\n"
+    Text = Text .. "━━━━━━━━━━━━━━━━━━\n"
+
+    if #Tools == 0 then
+
+        Text = Text .. "Nenhuma Tool encontrada"
+
+    else
+
+        Text = Text .. "Tools:\n"
+
+        for _, ToolName in ipairs(Tools) do
+            Text = Text .. "  • " .. ToolName .. "\n"
+        end
+
+    end
+
+    OverlayPlayerTools:SetText(Text)
+
+    UpdatePlayerToolsVisibility()
+
+end
+
+
+--========================================================--
+-- CLICK PLAYER
+--========================================================--
+
+local Mouse = LocalPlayer:GetMouse()
+
+Mouse.Button1Down:Connect(function()
+
+    -- Toggle desligado
+    if not EnabledPlayerTools then
+        return
+    end
+
+    local Target = Mouse.Target
+
+    if not Target then
+        return
+    end
+
+
+    -- Procura o Model do personagem
+    local Character = Target:FindFirstAncestorOfClass("Model")
+
+    if not Character then
+        return
+    end
+
+
+    -- Descobre o Player
+    local Player = Players:GetPlayerFromCharacter(Character)
+
+    if not Player then
+        return
+    end
+
+
+    -- Não seleciona o próprio player
+    if Player == LocalPlayer then
+        return
+    end
+
+
+    -- Mostra as Tools
+    UpdatePlayerInfo(Player)
+
+end)
+
+
+--========================================================--
+-- ATUALIZA AS TOOLS DO PLAYER SELECIONADO
+--========================================================--
+
+task.spawn(function()
+
+    while task.wait(0.5) do
+
+        if EnabledPlayerTools and SelectedPlayer then
+
+            if SelectedPlayer.Parent then
+                UpdatePlayerInfo(SelectedPlayer)
+            else
+                SelectedPlayer = nil
+                UpdatePlayerToolsVisibility()
+            end
+
+        end
+
+    end
+
+end)
+
+-------------------------------- SCRIPTS --------------------------------
 
 -------------------------- ESP --------------------------
 
@@ -889,9 +1146,115 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+--========================================================--
+-- AIMBOT SCRIPT
+--========================================================--
+
+--// EXECUTOR FUNCTION
+local mousemoverel = mousemoverel or mouse_move_relative or (Input and Input.MouseMoveRelative)
+if not mousemoverel then
+    warn("Executor não suporta mousemoverel! O script pode não mover a câmera.")
+end
+
+--// CONFIGURAÇÕES
+local ToggleEnabled = true -- Ativa/Desativa o script geral
+local AimPartName = "Head" -- Parte do corpo para focar
+local WallCheckEnabled = true -- Verifica se está atrás da parede
+local SmoothValue = 6 -- Quanto maior, mais lento/suave o movimento (1 = instantâneo)
+local CircleRadius = 100 -- Tamanho do círculo do FOV
+
+--// FOV CIRCLE
+local AimCircle = Drawing.new("Circle")
+AimCircle.Color = Color3.fromRGB(255, 255, 255)
+AimCircle.Thickness = 1
+AimCircle.Radius = CircleRadius
+AimCircle.NumSides = 60
+AimCircle.Filled = false
+AimCircle.Transparency = 0.5
+AimCircle.Visible = true
+
+--// FUNÇÃO PARA ATUALIZAR O CÍRCULO NA TELA
+local function UpdateCircle()
+    local MousePos = UserInputService:GetMouseLocation()
+    AimCircle.Position = MousePos
+end
+
+--// WALL CHECK (VERIFICAÇÃO DE PAREDE)
+local function IsVisible(TargetPart, Character)
+    if not WallCheckEnabled then return true end
+    
+    local CastParts = Camera:GetPartsObscuringTarget({Camera.CFrame.Position, TargetPart.Position}, {LocalPlayer.Character, Character})
+    return #CastParts == 0
+end
+
+--// FUNÇÃO PARA ENCONTRAR O ALVO MAIS PRÓXIMO DA MIRA
+local function GetClosestPlayer()
+    local ClosestTarget = nil
+    local MaxDistance = CircleRadius
+    local MousePos = UserInputService:GetMouseLocation()
+
+    -- Varre a pasta customizada que você especificou
+    for _, player in ipairs(Players:GetPlayers()) do
+
+
+        if player ~=  LocalPlayer then
+            local character = player.Character
+
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                local TargetPart = character:FindFirstChild(AimPartName)
+
+                if humanoid and humanoid.Health > 0 and TargetPart then
+                    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(TargetPart.Position)
+
+                    if OnScreen then
+
+                        local Distance = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+
+                        if Distance < MaxDistance then
+                            if IsVisible(TargetPart, character) then
+                                MaxDistance = Distance
+                                ClosestTarget = TargetPart
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return ClosestTarget
+end
+
+--// LOOP PRINCIPAL (RODA A CADA FRAME)
+RunService.RenderStepped:Connect(function()
+    UpdateCircle()
+    
+    if not ToggleEnabled then return end
+
+    -- Verifica se o botão direito do mouse está pressionado para puxar a mira
+    if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local Target = GetClosestPlayer()
+        
+        if Target and mousemoverel then
+            local ScreenPos, _ = Camera:WorldToViewportPoint(Target.Position)
+            local MousePos = UserInputService:GetMouseLocation()
+            
+            -- Calcula a distância que o mouse precisa mover
+            local MoveX = (ScreenPos.X - MousePos.X) / SmoothValue
+            local MoveY = (ScreenPos.Y - MousePos.Y) / SmoothValue
+            
+            -- Move o mouse relativamente usando o exploit
+            mousemoverel(MoveX, MoveY)
+        end
+    end
+end)
+
 -------------------------------- TABS --------------------------------
 local Tabs = {
 	Main = Window:AddTab("Esp", "eye"),
+    Aimbot = Window:AddTab("Aim", "crosshair"),
+    Misc = Window:AddTab("Misc", "package"),
 }
 
 -- Card1 do MAIN
@@ -1010,5 +1373,99 @@ Card_Main2:AddToggle("HealthBar", {
 	end,
 })
 
--- Card 3 do MAIN
-local Card_Main3 = Tabs.Main:AddRightGroupbox("Custom", "pencil")
+-- Tab Aimbot
+local Card_Aim1 = Tabs.Aimbot:AddLeftGroupbox("General", "locate")
+
+Card_Aim1:AddToggle("Aim", {
+	Text = "Aimbot",
+
+	Default = false,
+	Disabled = false,
+	Visible = true,
+	Risky = false,
+
+	Callback = function(v)
+		ToggleEnabled = v
+		AimCircle.Visible = v
+		AimCircleOutline.Visible = v
+	end,
+})
+
+Card_Aim1:AddSlider("FOV", {
+    Text = "Fov Size",
+    Default = 50,
+    Min = 10,
+    Max = 200,
+    Rounding = 0,
+})
+
+Options.FOV:OnChanged(function(v)
+    CircleRadius = v
+	AimCircle.Radius = v
+end)
+
+local Card_Aim2 = Tabs.Aimbot:AddRightGroupbox("Others", "layers")
+
+Card_Aim2:AddToggle("WALLCHECK", {
+	Text = "WallCheck",
+
+	Default = false,
+	Disabled = false,
+	Visible = true,
+	Risky = false,
+
+	Callback = function(v)
+		WallCheckEnabled = v
+	end,
+})
+
+Card_Aim2:AddSlider("SMOOTH", {
+    Text = "AimbotSmooth",
+    Default = 10,
+    Min = 1,
+    Max = 20,
+    Rounding = 0,
+})
+
+Options.SMOOTH:OnChanged(function(v)
+    SmoothValue = v
+end)
+
+Card_Aim2:AddDropdown("AIMPART", {
+    Text = "AimPart",
+    Values = { "Head", "Torso" },
+    Default = 1,
+})
+
+Options.AIMPART:OnChanged(function(opt)
+    AimPartName = opt
+end)
+
+-- Tab Misc
+local Card_Misc1 = Tabs.Misc:AddLeftGroupbox("General", "cpu")
+
+Card_Misc1:AddToggle("Overlay (FPS + PING)", {
+	Text = "Overlay Fps",
+
+	Default = false,
+	Disabled = false,
+	Visible = true,
+	Risky = false,
+
+	Callback = function(v)
+		SetFPSOverlayEnabled(v)
+	end,
+})
+
+Card_Misc1:AddToggle("Overlay (PLAYER TOOL)", {
+	Text = "Overlay Player Tool",
+
+	Default = false,
+	Disabled = false,
+	Visible = true,
+	Risky = false,
+
+	Callback = function(v)
+		SetPlayerToolsOverlayEnabled(v)
+	end,
+})
